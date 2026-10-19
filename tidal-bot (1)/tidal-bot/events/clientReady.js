@@ -1,3 +1,5 @@
+const { startTempBanLoop } = require('../utils/modCommands');
+
 module.exports = {
   name: 'clientReady',
   once: true,
@@ -10,6 +12,7 @@ module.exports = {
       await client.application.commands.set(body);
     }
     client.user.setActivity('Tidal Client');
+    startTempBanLoop(client); // unbans temp bans when they run out
     console.log(`Tidal Bot online as ${client.user.tag} | ${body.length} commands`);
   },
 };
