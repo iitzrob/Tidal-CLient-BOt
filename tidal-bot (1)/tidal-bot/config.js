@@ -10,5 +10,5 @@ module.exports = {
   // AI checker
   aiCheckChannels: [],   // channel ids to scan, empty = scan every channel
   aiThreshold: 40,       // score above this = AI
-  aiMinTextLength: 150,  // text shorter than this is skipped (too short to judge)
+  aiMinTextLength: 250,  // text shorter than this is skipped (the text detector needs 250+ characters)
 };
