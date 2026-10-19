@@ -8,6 +8,7 @@ module.exports = {
   footer: 'Tidal Client',
 
   // AI checker
+  aiScanChat: false,     // true = also scan normal chat messages, false = only check applications
   aiCheckChannels: [],   // channel ids to scan, empty = scan every channel
   aiThreshold: 40,       // score above this = AI
   aiMinTextLength: 250,  // text shorter than this is skipped (the text detector needs 250+ characters)
