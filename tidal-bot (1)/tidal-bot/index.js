@@ -1,7 +1,7 @@
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
-const { Client, GatewayIntentBits, Collection, Options } = require('discord.js');
+const { Client, GatewayIntentBits, Collection, Options, Partials } = require('discord.js');
 
 const client = new Client({
   // keep the memory cache small (the bot never needs old messages, presences, emojis, etc)
@@ -22,11 +22,13 @@ const client = new Client({
     UserManager: 20,
     GuildMemberManager: { maxSize: 20, keepOverLimit: (m) => m.id === m.client.user.id },
   }),
+  partials: [Partials.Channel], // needed to receive DMs
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMembers,   // welcome (turn on in dev portal)
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent, // quick answer (turn on in dev portal)
+    GatewayIntentBits.DirectMessages, // application answers in DMs
   ],
 });
 
