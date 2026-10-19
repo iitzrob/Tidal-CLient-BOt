@@ -2,7 +2,8 @@ const {
   ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder,
   ModalBuilder, TextInputBuilder, TextInputStyle,
 } = require('discord.js');
-const { applicationChannel } = require('../config');
+const { applicationChannel, aiThreshold, aiMinTextLength } = require('../config');
+const aiCheck = require('./aiCheck');
 const makeEmbed = require('./embed');
 const { isStaff } = require('./checks');
 
@@ -131,16 +132,44 @@ async function cancel(i) {
 async function finish(client, user, dm, session) {
   sessions.delete(user.id);
 
+  // AI check on everything they wrote (needs AIORNOT_API_KEY in .env)
+  const files = [];
+  let aiField = null;
+  let aiScore = null;
+  if (process.env.AIORNOT_API_KEY) {
+    const written = session.answers.join('\n\n');
+    if (written.length >= aiMinTextLength) {
+      try {
+        aiScore = await aiCheck.scoreText(written);
+        files.push(await aiCheck.gauge(aiScore, 'Application', 'ai-check.png'));
+        aiField = {
+          name: 'AI Check',
+          value: `**${Math.round(aiScore)}%** - ${aiScore > aiThreshold ? 'Likely AI generated' : 'Likely human'} (over ${aiThreshold} counts as AI)`,
+        };
+      } catch (e) {
+        console.error('application ai check failed:', e.message);
+      }
+    } else {
+      aiField = { name: 'AI Check', value: `Not enough text to check (needs ${aiMinTextLength}+ characters)` };
+    }
+  }
+
   const review = makeEmbed()
     .setTitle('New Staff Application')
     .setDescription(`**Applicant:** ${user} (${user.username} - ${user.id})`)
-    .setThumbnail(user.displayAvatarURL())
-    .addFields(QUESTIONS.map((q, n) => ({ name: `${n + 1}. ${q}`.slice(0, 256), value: session.answers[n] || 'no answer' })));
+    .setThumbnail(user.displayAvatarURL());
+  if (aiField) review.addFields(aiField);
+  review.addFields(QUESTIONS.map((q, n) => ({ name: `${n + 1}. ${q}`.slice(0, 256), value: session.answers[n] || 'no answer' })));
+  if (aiScore !== null) {
+    review.setImage('attachment://ai-check.png');
+    review.setColor(aiScore > aiThreshold ? 0xe74c3c : 0x2ecc71);
+  }
 
   try {
     const ch = await client.channels.fetch(applicationChannel);
     await ch.send({
       embeds: [review],
+      files,
       components: [row(
         btn(`app_accept:${user.id}`, 'Accept', ButtonStyle.Success),
         btn(`app_deny:${user.id}`, 'Deny', ButtonStyle.Danger)
