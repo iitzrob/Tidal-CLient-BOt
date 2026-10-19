@@ -1,6 +1,6 @@
 const {
   ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder,
-  ModalBuilder, TextInputBuilder, TextInputStyle,
+  ModalBuilder, TextInputBuilder, TextInputStyle, AttachmentBuilder, MessageFlags,
 } = require('discord.js');
 const { applicationChannel, aiThreshold, aiMinTextLength } = require('../config');
 const aiCheck = require('./aiCheck');
@@ -47,7 +47,7 @@ function panel() {
 // ---------- step 1: panel button -> intro DM ----------
 async function openApplication(i) {
   if (sessions.has(i.user.id))
-    return i.reply({ content: 'you already have an application in progress, check your DMs', ephemeral: true });
+    return i.reply({ content: 'you already have an application in progress, check your DMs', flags: MessageFlags.Ephemeral });
 
   const embed = makeEmbed()
     .setTitle('Discord Staff Application')
@@ -61,9 +61,9 @@ async function openApplication(i) {
       components: [row(btn('app_begin', 'Apply', ButtonStyle.Success), btn('app_cancel', 'Cancel', ButtonStyle.Danger))],
     });
   } catch {
-    return i.reply({ content: 'i cant dm you, turn on dms from server members and try again', ephemeral: true });
+    return i.reply({ content: 'i cant dm you, turn on dms from server members and try again', flags: MessageFlags.Ephemeral });
   }
-  i.reply({ content: 'check your dms', ephemeral: true });
+  i.reply({ content: 'check your dms', flags: MessageFlags.Ephemeral });
 }
 
 // ---------- step 2: Apply in the DM -> questions ----------
@@ -129,41 +129,68 @@ async function cancel(i) {
 }
 
 // ---------- finished: send to staff ----------
+const ANSWER_CAP = 380; // discord limits ALL embeds in one message to 6000 chars total
+
 async function finish(client, user, dm, session) {
   sessions.delete(user.id);
 
-  // AI check on everything they wrote (needs AIORNOT_API_KEY in .env)
+  // ----- AI check on everything they wrote (needs AIORNOT_API_KEY in .env) -----
+  // Always ends up with a gauge picture + a field, even if the check fails, so staff can see what happened.
   const files = [];
   let aiField = null;
   let aiScore = null;
-  if (process.env.AIORNOT_API_KEY) {
-    const written = session.answers.join('\n\n');
-    if (written.length >= aiMinTextLength) {
-      try {
-        aiScore = await aiCheck.scoreText(written);
-        files.push(await aiCheck.gauge(aiScore, 'Application', 'ai-check.png'));
-        aiField = {
-          name: 'AI Check',
-          value: `**${Math.round(aiScore)}%** - ${aiScore > aiThreshold ? 'Likely AI generated' : 'Likely human'} (over ${aiThreshold} counts as AI)`,
-        };
-      } catch (e) {
-        console.error('application ai check failed:', e.message);
-      }
-    } else {
-      aiField = { name: 'AI Check', value: `Not enough text to check (needs ${aiMinTextLength}+ characters)` };
+  const written = session.answers.join('\n\n');
+
+  let note = '';
+  if (!process.env.AIORNOT_API_KEY) {
+    note = 'no api key';
+    aiField = { name: 'AI Check', value: 'Not run - AIORNOT_API_KEY is missing in .env' };
+  } else if (written.length < aiMinTextLength) {
+    note = 'not enough text';
+    aiField = { name: 'AI Check', value: `Not enough text to check (${written.length}/${aiMinTextLength} characters)` };
+  } else {
+    try {
+      aiScore = await aiCheck.scoreText(written);
+      aiField = {
+        name: 'AI Check',
+        value: `**${Math.round(aiScore)}%** - ${aiScore > aiThreshold ? 'Likely AI generated' : 'Likely human'} (over ${aiThreshold} counts as AI)`,
+      };
+    } catch (e) {
+      console.error('application ai check failed:', e.message);
+      note = 'check failed';
+      aiField = { name: 'AI Check', value: `Check failed: ${String(e.message).slice(0, 200)}` };
     }
+  }
+
+  const gaugeFile = await aiCheck.gauge(aiScore, 'Application', 'ai-check.png', note).catch((e) => {
+    console.error('gauge failed:', e.message);
+    return null;
+  });
+  if (gaugeFile) files.push(gaugeFile);
+
+  // ----- answers (trimmed so the embed never goes over discord's 6000 char limit) -----
+  let trimmed = false;
+  const fields = QUESTIONS.map((q, n) => {
+    let a = session.answers[n] || 'no answer';
+    if (a.length > ANSWER_CAP) {
+      a = a.slice(0, ANSWER_CAP - 3) + '...';
+      trimmed = true;
+    }
+    return { name: `${n + 1}. ${q}`.slice(0, 256), value: a };
+  });
+  if (trimmed) {
+    const full = QUESTIONS.map((q, n) => `${n + 1}. ${q}\n${session.answers[n] || 'no answer'}`).join('\n\n');
+    files.push(new AttachmentBuilder(Buffer.from(full, 'utf8'), { name: 'full-answers.txt' }));
   }
 
   const review = makeEmbed()
     .setTitle('New Staff Application')
-    .setDescription(`**Applicant:** ${user} (${user.username} - ${user.id})`)
+    .setDescription(`**Applicant:** ${user} (${user.username} - ${user.id})${trimmed ? '\n-# Long answers were shortened, full text is in full-answers.txt' : ''}`)
     .setThumbnail(user.displayAvatarURL());
   if (aiField) review.addFields(aiField);
-  review.addFields(QUESTIONS.map((q, n) => ({ name: `${n + 1}. ${q}`.slice(0, 256), value: session.answers[n] || 'no answer' })));
-  if (aiScore !== null) {
-    review.setImage('attachment://ai-check.png');
-    review.setColor(aiScore > aiThreshold ? 0xe74c3c : 0x2ecc71);
-  }
+  review.addFields(fields);
+  if (gaugeFile) review.setImage('attachment://ai-check.png');
+  if (aiScore !== null) review.setColor(aiScore > aiThreshold ? 0xe74c3c : 0x2ecc71);
 
   try {
     const ch = await client.channels.fetch(applicationChannel);
@@ -188,7 +215,7 @@ async function finish(client, user, dm, session) {
 
 // ---------- staff: accept / deny ----------
 async function decideButton(i, accept, userId) {
-  if (!i.inGuild() || !isStaff(i.member)) return i.reply({ content: 'staff only', ephemeral: true });
+  if (!i.inGuild() || !isStaff(i.member)) return i.reply({ content: 'staff only', flags: MessageFlags.Ephemeral });
 
   const modal = new ModalBuilder()
     .setCustomId(`app_modal:${accept ? 'accept' : 'deny'}:${userId}`)
@@ -207,7 +234,7 @@ async function decideButton(i, accept, userId) {
 
 async function handleModal(i) {
   const [, decision, userId] = i.customId.split(':');
-  if (!i.inGuild() || !isStaff(i.member)) return i.reply({ content: 'staff only', ephemeral: true });
+  if (!i.inGuild() || !isStaff(i.member)) return i.reply({ content: 'staff only', flags: MessageFlags.Ephemeral });
 
   const accepted = decision === 'accept';
   const reason = i.fields.getTextInputValue('reason').trim() || 'No reason given';
@@ -237,7 +264,7 @@ async function handleModal(i) {
     )
     .addFields({ name: 'Reason', value: reason.slice(0, 1024) });
   const sent = user ? await user.send({ embeds: [dmEmbed] }).then(() => true).catch(() => false) : false;
-  if (!sent) i.followUp({ content: 'could not dm the applicant (dms closed)', ephemeral: true }).catch(() => {});
+  if (!sent) i.followUp({ content: 'could not dm the applicant (dms closed)', flags: MessageFlags.Ephemeral }).catch(() => {});
 }
 
 // ---------- router ----------
