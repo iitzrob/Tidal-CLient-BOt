@@ -1,9 +1,27 @@
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
-const { Client, GatewayIntentBits, Collection } = require('discord.js');
+const { Client, GatewayIntentBits, Collection, Options } = require('discord.js');
 
 const client = new Client({
+  // keep the memory cache small (the bot never needs old messages, presences, emojis, etc)
+  makeCache: Options.cacheWithLimits({
+    ...Options.DefaultMakeCacheSettings,
+    MessageManager: 0,
+    PresenceManager: 0,
+    VoiceStateManager: 0,
+    ReactionManager: 0,
+    ReactionUserManager: 0,
+    GuildEmojiManager: 0,
+    GuildStickerManager: 0,
+    GuildScheduledEventManager: 0,
+    StageInstanceManager: 0,
+    GuildBanManager: 0,
+    GuildInviteManager: 0,
+    ThreadMemberManager: 0,
+    UserManager: 20,
+    GuildMemberManager: { maxSize: 20, keepOverLimit: (m) => m.id === m.client.user.id },
+  }),
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMembers,   // welcome (turn on in dev portal)
