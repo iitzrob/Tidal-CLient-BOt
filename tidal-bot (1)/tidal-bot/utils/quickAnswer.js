@@ -10,7 +10,7 @@ module.exports = (msg) => {
   if (cooldown(`qa:${msg.channel.id}`, 30000)) return; // dont spam the channel
 
   const embed = makeEmbed()
-    .setTitle('Quick Answer')
+    .setTitle('Response')
     .setDescription('Run /download to get the most recent launcher download');
   msg.reply({ embeds: [embed], allowedMentions: { repliedUser: false } });
 };
