@@ -38,13 +38,13 @@ async function scoreImage(url) {
 
 // text: AI or Not (AIORNOT_API_KEY in .env) -> 0-100
 async function scoreText(text) {
+  // multipart/form-data: let fetch set the Content-Type + boundary itself (do not set it by hand)
+  const form = new FormData();
+  form.append('text', text);
   const j = await fetchJson('https://api.aiornot.com/v2/text/sync', {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${process.env.AIORNOT_API_KEY}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: new URLSearchParams({ text }).toString(),
+    headers: { Authorization: `Bearer ${process.env.AIORNOT_API_KEY}` },
+    body: form,
   });
   const t = j.report?.ai_text ?? j.ai_text ?? j.report?.text;
   const c = t?.confidence ?? t?.ai_probability ?? t?.score;
@@ -67,7 +67,7 @@ async function gauge(score, label, name, note = '') {
   }
   const na = typeof score !== 'number' || Number.isNaN(score);
   score = na ? 0 : Math.max(0, Math.min(100, score));
-  const W = 600, H = 380, cx = 300, cy = 235, R = 165, LW = 36;
+  const W = 600, H = 420, cx = 300, cy = 275, R = 165, LW = 36;
   const canvas = createCanvas(W, H);
   const g = canvas.getContext('2d');
 
@@ -77,7 +77,7 @@ async function gauge(score, label, name, note = '') {
   g.textAlign = 'center';
   g.fillStyle = '#7fb8e6';
   g.font = `bold 22px ${FONT}`;
-  g.fillText(`AI CHECK - ${label.toUpperCase()}`, cx, 42);
+  g.fillText(`AI CHECK - ${label.toUpperCase()}`, cx, 40);
 
   const ang = (s) => Math.PI + (s / 100) * Math.PI; // 0 = left, 100 = right, over the top
   const arc = (from, to, color) => {
@@ -137,10 +137,10 @@ async function gauge(score, label, name, note = '') {
   const isAi = score > aiThreshold;
   g.fillStyle = '#ffffff';
   g.font = `bold 60px ${FONT}`;
-  g.fillText(na ? 'N/A' : `${Math.round(score)}%`, cx, 312);
+  g.fillText(na ? 'N/A' : `${Math.round(score)}%`, cx, cy + 77);
   g.fillStyle = na ? '#7fb8e6' : isAi ? RED : GREEN;
   g.font = `bold 24px ${FONT}`;
-  g.fillText(na ? (note || 'NO RESULT').toUpperCase() : isAi ? 'LIKELY AI' : 'LIKELY HUMAN', cx, 350);
+  g.fillText(na ? (note || 'NO RESULT').toUpperCase() : isAi ? 'LIKELY AI' : 'LIKELY HUMAN', cx, cy + 115);
 
   return new AttachmentBuilder(await canvas.encode('png'), { name });
 }
