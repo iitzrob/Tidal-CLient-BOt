@@ -2,7 +2,7 @@ const { createCanvas } = require('@napi-rs/canvas');
 const { AttachmentBuilder } = require('discord.js');
 const makeEmbed = require('./embed');
 const cooldown = require('./cooldown');
-const { aiCheckChannels, aiThreshold, aiMinTextLength } = require('../config');
+const { aiScanChat, aiCheckChannels, aiThreshold, aiMinTextLength } = require('../config');
 
 const FONT = '"DejaVu Sans", Arial, sans-serif';
 const GREEN = '#2ecc71';
@@ -131,6 +131,7 @@ async function gauge(score, label, name) {
 const cleanText = (s) => s.replace(/https?:\/\/\S+/g, '').replace(/<[^>\s]+>/g, '').trim();
 
 module.exports = async (msg) => {
+  if (!aiScanChat) return;
   if (aiCheckChannels.length && !aiCheckChannels.includes(msg.channel.id)) return;
 
   const jobs = [];
@@ -172,3 +173,7 @@ module.exports = async (msg) => {
   if (!embeds.length) return;
   await msg.reply({ embeds, files, allowedMentions: { repliedUser: false } });
 };
+
+// used by the applications system
+module.exports.scoreText = scoreText;
+module.exports.gauge = gauge;
