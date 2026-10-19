@@ -1,4 +1,5 @@
 const { handleComponent } = require('../utils/tickets');
+const apps = require('../utils/applications');
 
 module.exports = {
   name: 'interactionCreate',
@@ -7,8 +8,11 @@ module.exports = {
       if (i.isChatInputCommand()) {
         const cmd = client.commands.get(i.commandName);
         if (cmd) await cmd.execute(i);
+      } else if (i.isModalSubmit()) {
+        if (apps.owns(i)) await apps.handleModal(i);
       } else if (i.isButton() || i.isStringSelectMenu()) {
-        await handleComponent(i);
+        if (apps.owns(i)) await apps.handle(i);
+        else await handleComponent(i);
       }
     } catch (err) {
       console.error(err);
