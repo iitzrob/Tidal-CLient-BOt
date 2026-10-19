@@ -6,4 +6,9 @@ module.exports = {
   applicationChannel: '1561609682332946472', // where finished applications go for staff to accept / deny
   color: 0x0077be, // ocean blue
   footer: 'Tidal Client',
+
+  // AI checker
+  aiCheckChannels: [],   // channel ids to scan, empty = scan every channel
+  aiThreshold: 40,       // score above this = AI
+  aiMinTextLength: 150,  // text shorter than this is skipped (too short to judge)
 };
