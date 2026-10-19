@@ -1,4 +1,3 @@
-const { createCanvas } = require('@napi-rs/canvas');
 const { AttachmentBuilder } = require('discord.js');
 const makeEmbed = require('./embed');
 const cooldown = require('./cooldown');
@@ -47,14 +46,27 @@ async function scoreText(text) {
     },
     body: new URLSearchParams({ text }).toString(),
   });
-  const c = j.report?.ai_text?.confidence;
-  if (typeof c !== 'number') throw new Error('aiornot: no score in response');
-  return c * 100;
+  const t = j.report?.ai_text ?? j.ai_text ?? j.report?.text;
+  const c = t?.confidence ?? t?.ai_probability ?? t?.score;
+  if (typeof c !== 'number') {
+    console.error('aiornot unexpected response:', JSON.stringify(j).slice(0, 400));
+    throw new Error('aiornot: no score in response');
+  }
+  return c <= 1 ? c * 100 : c;
 }
 
 // ---------- the wheel ----------
-async function gauge(score, label, name) {
-  score = Math.max(0, Math.min(100, score));
+// score = number 0-100, or null for "no result" (grey N/A wheel). note = small line under the verdict.
+async function gauge(score, label, name, note = '') {
+  let createCanvas;
+  try {
+    ({ createCanvas } = require('@napi-rs/canvas'));
+  } catch (e) {
+    console.error('gauge: @napi-rs/canvas not available (run npm install):', e.message);
+    return null;
+  }
+  const na = typeof score !== 'number' || Number.isNaN(score);
+  score = na ? 0 : Math.max(0, Math.min(100, score));
   const W = 600, H = 380, cx = 300, cy = 235, R = 165, LW = 36;
   const canvas = createCanvas(W, H);
   const g = canvas.getContext('2d');
@@ -78,10 +90,14 @@ async function gauge(score, label, name) {
   };
 
   // dim track (green = human zone, red = AI zone) then the bright filled part
-  arc(0, aiThreshold, '#15402f');
-  arc(aiThreshold, 100, '#4a1d24');
-  if (score > 0) arc(0, Math.min(score, aiThreshold), GREEN);
-  if (score > aiThreshold) arc(aiThreshold, score, RED);
+  if (na) {
+    arc(0, 100, '#2a3a4a');
+  } else {
+    arc(0, aiThreshold, '#15402f');
+    arc(aiThreshold, 100, '#4a1d24');
+    if (score > 0) arc(0, Math.min(score, aiThreshold), GREEN);
+    if (score > aiThreshold) arc(aiThreshold, score, RED);
+  }
 
   // threshold tick + label
   const ta = ang(aiThreshold);
@@ -102,14 +118,16 @@ async function gauge(score, label, name) {
   g.fillText('100', cx + R, cy + 32);
 
   // needle
-  const a = ang(score);
-  g.beginPath();
-  g.moveTo(cx, cy);
-  g.lineTo(cx + Math.cos(a) * (R - LW / 2 - 10), cy + Math.sin(a) * (R - LW / 2 - 10));
-  g.lineWidth = 6;
-  g.lineCap = 'round';
-  g.strokeStyle = '#ffffff';
-  g.stroke();
+  if (!na) {
+    const a = ang(score);
+    g.beginPath();
+    g.moveTo(cx, cy);
+    g.lineTo(cx + Math.cos(a) * (R - LW / 2 - 10), cy + Math.sin(a) * (R - LW / 2 - 10));
+    g.lineWidth = 6;
+    g.lineCap = 'round';
+    g.strokeStyle = '#ffffff';
+    g.stroke();
+  }
   g.beginPath();
   g.arc(cx, cy, 13, 0, Math.PI * 2);
   g.fillStyle = '#ffffff';
@@ -119,10 +137,10 @@ async function gauge(score, label, name) {
   const isAi = score > aiThreshold;
   g.fillStyle = '#ffffff';
   g.font = `bold 60px ${FONT}`;
-  g.fillText(`${Math.round(score)}%`, cx, 312);
-  g.fillStyle = isAi ? RED : GREEN;
+  g.fillText(na ? 'N/A' : `${Math.round(score)}%`, cx, 312);
+  g.fillStyle = na ? '#7fb8e6' : isAi ? RED : GREEN;
   g.font = `bold 24px ${FONT}`;
-  g.fillText(isAi ? 'LIKELY AI' : 'LIKELY HUMAN', cx, 350);
+  g.fillText(na ? (note || 'NO RESULT').toUpperCase() : isAi ? 'LIKELY AI' : 'LIKELY HUMAN', cx, 350);
 
   return new AttachmentBuilder(await canvas.encode('png'), { name });
 }
@@ -160,13 +178,14 @@ module.exports = async (msg) => {
     const score = results[n].value;
     const name = `ai-${n + 1}.png`;
     const isAi = score > aiThreshold;
-    files.push(await gauge(score, jobs[n].kind, name));
+    const img = await gauge(score, jobs[n].kind, name);
+    if (img) files.push(img);
     embeds.push(
       makeEmbed(' - AI detection is not 100% accurate')
         .setColor(isAi ? 0xe74c3c : 0x2ecc71)
         .setTitle(`AI Check - ${jobs[n].kind}`)
         .setDescription(`**${Math.round(score)}%** - ${isAi ? 'Likely AI generated' : 'Likely human'}`)
-        .setImage(`attachment://${name}`)
+        .setImage(img ? `attachment://${name}` : null)
     );
   }
 
@@ -176,4 +195,5 @@ module.exports = async (msg) => {
 
 // used by the applications system
 module.exports.scoreText = scoreText;
+module.exports.scoreImage = scoreImage;
 module.exports.gauge = gauge;
