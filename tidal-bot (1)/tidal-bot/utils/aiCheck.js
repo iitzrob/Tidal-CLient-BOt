@@ -37,15 +37,19 @@ async function scoreImage(url) {
   return s * 100;
 }
 
-// text: Sapling (SAPLING_KEY in .env) -> 0-100
+// text: AI or Not (AIORNOT_API_KEY in .env) -> 0-100
 async function scoreText(text) {
-  const j = await fetchJson('https://api.sapling.ai/api/v1/aidetect', {
+  const j = await fetchJson('https://api.aiornot.com/v2/text/sync', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.SAPLING_KEY}` },
-    body: JSON.stringify({ text }),
+    headers: {
+      Authorization: `Bearer ${process.env.AIORNOT_API_KEY}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams({ text }).toString(),
   });
-  if (typeof j.score !== 'number') throw new Error('sapling: no score in response');
-  return j.score * 100;
+  const c = j.report?.ai_text?.confidence;
+  if (typeof c !== 'number') throw new Error('aiornot: no score in response');
+  return c * 100;
 }
 
 // ---------- the wheel ----------
@@ -137,7 +141,7 @@ module.exports = async (msg) => {
       .forEach((a) => jobs.push({ kind: 'Image', run: () => scoreImage(a.url) }));
   }
   const text = cleanText(msg.content || '');
-  if (process.env.SAPLING_KEY && text.length >= aiMinTextLength)
+  if (process.env.AIORNOT_API_KEY && text.length >= aiMinTextLength)
     jobs.push({ kind: 'Text', run: () => scoreText(text) });
 
   if (!jobs.length) return;
